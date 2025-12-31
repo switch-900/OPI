@@ -29,6 +29,33 @@ const rate_limit_max = process.env.RATE_LIMIT_MAX || 100
 var app = express();
 app.set('trust proxy', parseInt(process.env.API_TRUSTED_PROXY_CNT || "0"))
 
+let bitmapsHasTransactionCountColumn = null;
+let columnCheckTimestamp = null;
+const COLUMN_CACHE_TTL_MS = 60000; // Re-check every 60 seconds to detect migrations
+
+async function ensureBitmapsTransactionCountColumnCached() {
+  const now = Date.now();
+  if (bitmapsHasTransactionCountColumn !== null && columnCheckTimestamp && (now - columnCheckTimestamp) < COLUMN_CACHE_TTL_MS) {
+    return;
+  }
+  try {
+    const res = await db_pool.query(
+      `select 1
+       from information_schema.columns
+       where table_schema = 'public'
+         and table_name = 'bitmaps'
+         and column_name = 'transaction_count'
+       limit 1;`
+    );
+    bitmapsHasTransactionCountColumn = res.rows.length > 0;
+    columnCheckTimestamp = now;
+  } catch (e) {
+    // Fail open: avoid breaking the endpoint if introspection fails
+    bitmapsHasTransactionCountColumn = false;
+    columnCheckTimestamp = now;
+  }
+}
+
 var corsOptions = {
   origin: '*',
   optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
@@ -113,9 +140,15 @@ app.get('/v1/bitmap/get_hash_of_all_bitmaps', async (request, response) => {
 app.get('/v1/bitmap/get_inscription_id_of_bitmap', async (request, response) => {
   let bitmap_number = request.query.bitmap_number
 
-  let query = ` select inscription_id
-                from bitmaps
-                where bitmap_number = $1;`
+  await ensureBitmapsTransactionCountColumnCached();
+
+  let query = bitmapsHasTransactionCountColumn
+    ? ` select inscription_id, transaction_count
+        from bitmaps
+        where bitmap_number = $1;`
+    : ` select inscription_id
+        from bitmaps
+        where bitmap_number = $1;`
   let params = [bitmap_number]
 
   let res = await db_pool.query(query, params)
@@ -124,10 +157,12 @@ app.get('/v1/bitmap/get_inscription_id_of_bitmap', async (request, response) => 
     return
   }
   let inscription_id = res.rows[0].inscription_id
+  let transaction_count = bitmapsHasTransactionCountColumn ? res.rows[0].transaction_count : null
 
   response.send({ error: null, result: {
       inscription_id: inscription_id,
-      bitmap_number: bitmap_number
+      bitmap_number: bitmap_number,
+      transaction_count: transaction_count
     }
   })
 });

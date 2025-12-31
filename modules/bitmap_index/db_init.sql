@@ -12,6 +12,9 @@ CREATE TABLE public.bitmaps (
 	inscription_number int4 NOT NULL,
 	bitmap_number int4 NOT NULL,
 	block_height int4 NOT NULL,
+	transaction_count int4 NULL,
+	tx_count_fetch_attempts int4 NOT NULL DEFAULT 0,
+	tx_count_fetch_last_attempt timestamptz NULL,
 	CONSTRAINT bitmaps_pk PRIMARY KEY (id)
 );
 CREATE UNIQUE INDEX bitmaps_bitmap_number_idx ON public.bitmaps USING btree (bitmap_number);
@@ -33,4 +36,5 @@ CREATE TABLE public.bitmap_indexer_version (
 	db_version int4 NOT NULL,
 	CONSTRAINT bitmap_indexer_version_pk PRIMARY KEY (id)
 );
-INSERT INTO public.bitmap_indexer_version (indexer_version, db_version) VALUES ('opi-bitmap-full-node v1.0.0', 4);
+INSERT INTO public.bitmap_indexer_version (indexer_version, db_version) VALUES ('opi-bitmap-full-node v1.0.0', 5);
+
